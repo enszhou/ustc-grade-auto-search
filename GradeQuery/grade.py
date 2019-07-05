@@ -1,80 +1,104 @@
-from bs4 import BeautifulSoup
 import requests
 import time
-import _thread
 from email.header import Header
 from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
 import smtplib
+import configparser
+import qrcode
+import matplotlib.pyplot as plt
+import pickle
+import json
+import traceback
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.1.6) Gecko/20091201 Firefox/3.5.6'
 }
-url_login = 'https://passport.ustc.edu.cn/login?service=http%3A%2F%2Fmis.teach.ustc.edu.cn%2FcasLogin.do'
-url_query = 'http://mis.teach.ustc.edu.cn/querycjxx.do'
+url_uuid = 'https://passport.ustc.edu.cn/CodeServlet?service=https://jw.ustc.edu.cn/ucas-sso/login&cd='
+url_qrcode1 = r'https://open.weixin.qq.com/connect/oauth2/authorize?' \
+              r'appid=wx68a5870622ecbbcf&redirect_uri=https://ucas1.ustc.edu.cn/login&' \
+              r'response_type=code&scope=SCOPE&agentid=44&state=fromWeiXinQR-uuidStart@'
+url_qrcode2 = r'uuidEnd@https://jw.ustc.edu.cn/ucas-sso/login#wechat_redirect'
+# url_login = 'https://passport.ustc.edu.cn/login?service=https%3A%2F%2Fjw.ustc.edu.cn%2Fucas-sso%2Flogin'
+url_login1 = 'https://passport.ustc.edu.cn/LongConnectionCheckServlet?uuid='
+url_login2 = '&service=https%3A%2F%2Fjw.ustc.edu.cn%2Fucas-sso%2Flogin&_='
+url_check_ticket = 'https://jw.ustc.edu.cn/ucas-sso/login'
+url_query = 'https://jw.ustc.edu.cn/for-std/grade/sheet/getGradeList?trainTypeId=1&semesterIds=81'
 num = 0
 
 
-def login():
+def login_qrcode():
+    global url_uuid
     session = requests.session()
+    print('Trying to login...')
+    url_uuid = url_uuid + str(int(time.time() * 1000))
+    # print(url_uuid)
+    response = session.get(url=url_uuid)
+    content = response.content.decode('utf-8')
+    uuid = content.split('&', maxsplit=2)[0]
+    # print(uuid)
+    url_qrcode = url_qrcode1 + uuid + url_qrcode2
+    # print(url_qrcode)
+    # qr = QRCode(url_qrcode)
+    # show_cmd_qrcode(qr.text())
+    qr_img = qrcode.make(data=url_qrcode)
+    plt.imshow(qr_img)
+    plt.axis('off')
+    plt.show()
+    url_login = url_login1 + uuid + url_login2 + str(int(time.time() * 1000))
+    print(url_login)
     while True:
-        print('Trying to login...')
-        response = session.get(url=url_login)
-        content = response.content
-        html = content.decode('utf-8')
-        html = BeautifulSoup(html, 'html.parser')
-        token = html.find(type='hidden')['value']
-        post_data = {
-            '_token': token,
-            'login': student_id,
-            'password': password_jwc,
-            'button': '登录'
-        }
-        response = session.post(url_login, post_data)
-        head = response.headers
-        if 'Set-Cookie' in head:
-            if 'JSESSIONID=' in head['Set-Cookie']:
-                print('Login successfully!')
-                break
-            else:
-                print("Username or Password is wrong")
-                break
+        response = session.get(url_login)
+        content = response.content.decode('utf-8')
+        content = eval(content)
+        print(content)
+        if 'isFollow' in content:
+            print('>', end=' ')
+        else:
+            ticket = content['ticket']
+            print(ticket)
+            break
+        time.sleep(3)
+    session.get(url=url_check_ticket, data={'ticket': ticket})
+    session_file = open('session.plk', 'wb')
+    pickle.dump(session, session_file)
+    session_file.close()
     return session
+
+
+def show_cmd_qrcode(qr_text):
+    white = '\u2588'
+    black = '  '
+    qr_text = qr_text.replace('0', white).replace('1', black)
+    print(qr_text)
 
 
 def query(session):
     global num
     times = 0
     while True:
-        print("\nWaiting for 5 seconds...\n")
-        time.sleep(5)
+        print("\nWaiting for 600 seconds...")
+        if times > 0:
+            time.sleep(600)
         times += 1
         print('The %d times in searching>>>' % times)
-        post_data = {
-            'xuenian': '20181',
-            'chaxun': '+%B2%E9++%D1%AF+',
-            'px': 1,
-            'zd': 0
-        }
-        response = session.post(url_query, post_data)
-        content = response.content
-        html = content.decode('GBK')
-        html = BeautifulSoup(html, 'html.parser')
-        table = html.find_all('table')[2]
-        tr_arr = table.find_all('tr')
-        grade_arr = tr_arr[0:-1]
-        msg = ""
-        for grade in grade_arr:
-            td_arr = grade.find_all('td')
-            msg = msg + ("%-5s %-5s %s\n" % (td_arr[4].text, td_arr[6].text, td_arr[2].text))
-        if len(grade_arr) > num:
-            num = len(grade_arr)
-            _thread.start_new_thread(send_mail, (msg,))
-        '''
-        for grade in grade_arr:
-            td_arr = grade.find_all('td')
-            print("%-5s %-5s %s" % (td_arr[4].text, td_arr[6].text, td_arr[2].text))
-        '''
+        response = session.get(url=url_query)
+        content = response.content.decode('utf-8')
+        try:
+            data = json.loads(content)
+        except Exception:
+            raise
+        courses = data['semesters'][0]['scores']
+        message = ''
+        for course in courses:
+            message += '>%s %s %s\n' % (course['courseNameCh'], course['score'], course['gp'])
+        print(message, end='')
+        if len(courses) > num:
+            num = len(courses)
+            print("New grade released")
+            send_mail(message)
+        else:
+            print('No new grade released')
 
 
 def _format_addr(s):
@@ -98,14 +122,19 @@ def send_mail(message):
 
 
 if __name__ == '__main__':
-    student_id = input("学号：")
-    password_jwc = input("教务系统密码：")
-    from_addr_mail = input("发件账号：")
-    password_mail = input("发件密码：")
-    to_addr_mail = input("收件账号：")
-    while True:
-        session_o = login()
-        try:
-            query(session_o)
-        finally:
-            print('Trying to reLogin...')
+    config = configparser.ConfigParser()
+    config.read('./config.ini')
+    from_addr_mail = config.get('info', 'from_addr_mail')
+    password_mail = config.get('info', 'password_mail')
+    to_addr_mail = config.get('info', 'to_addr_mail')
+    try:
+        session_file = open('session.plk', 'rb')
+        session_o = pickle.load(session_file)
+        session_file.close()
+        print("Old Session>>>")
+        query(session_o)
+    except Exception as e:
+        traceback.print_exc()
+        session_o = login_qrcode()
+        print('New Session>>>')
+        query(session_o)
