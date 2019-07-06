@@ -26,7 +26,6 @@ url_login1 = 'https://passport.ustc.edu.cn/LongConnectionCheckServlet?uuid='
 url_login2 = '&service=https%3A%2F%2Fjw.ustc.edu.cn%2Fucas-sso%2Flogin&_='
 url_check_ticket = 'https://jw.ustc.edu.cn/ucas-sso/login'
 url_query = 'https://jw.ustc.edu.cn/for-std/grade/sheet/getGradeList?trainTypeId=1&semesterIds=81'
-num = 0
 
 
 def login_qrcode():
@@ -85,11 +84,11 @@ def query(session):
     global num
     times = 0
     while True:
-        print("\nWaiting for 600 seconds...")
+        print("\n...Waiting for 600 seconds...")
         if times > 0:
             time.sleep(600)
         times += 1
-        print('The %d times in searching>>>' % times)
+        print('>>>The %dth query<<<' % times)
         response = session.get(url=url_query)
         content = response.content.decode('utf-8')
         try:
@@ -98,15 +97,21 @@ def query(session):
             raise
         courses = data['semesters'][0]['scores']
         message = ''
+        i = 1
         for course in courses:
-            message += '>%s %s %s\n' % (course['courseNameCh'], course['score'], course['gp'])
+            message += '%d.%s %s %s\n' % (i, course['courseNameCh'], course['score'], course['gp'])
+            i += 1
         print(message, end='')
         if len(courses) > num:
             num = len(courses)
-            print("New grade released")
+            print("***New grade released***")
             send_mail(message, 0)
+            config.set('info', 'num_courses', str(num))
+            f = open('config.ini','w')
+            config.write(f)
+            f.close()
         else:
-            print('No new grade released')
+            print('---No new grade released---')
 
 
 def _format_addr(s):
@@ -139,6 +144,7 @@ if __name__ == '__main__':
     from_addr_mail = config.get('info', 'from_addr_mail')
     password_mail = config.get('info', 'password_mail')
     to_addr_mail = config.get('info', 'to_addr_mail')
+    num = int(config.get('info', 'num_courses'))
     try:
         session_file = open('session.plk', 'rb')
         session_o = pickle.load(session_file)
