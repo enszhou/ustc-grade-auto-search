@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import pickle
 import json
 import traceback
+import base64
+from io import BytesIO
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.1.6) Gecko/20091201 Firefox/3.5.6'
@@ -38,10 +40,16 @@ def login_qrcode():
     uuid = content.split('&', maxsplit=2)[0]
     # print(uuid)
     url_qrcode = url_qrcode1 + uuid + url_qrcode2
-    # print(url_qrcode)
+    print(url_qrcode)
     # qr = QRCode(url_qrcode)
     # show_cmd_qrcode(qr.text())
     qr_img = qrcode.make(data=url_qrcode)
+    qr_img_bytes_io = BytesIO()
+    qr_img.save(qr_img_bytes_io)
+    qr_img_bytes = qr_img_bytes_io.getvalue()
+    qr_img_base64 = base64.b64encode(qr_img_bytes)
+    message = '<img src="data:image/jpg;base64,%s"/>' % str(qr_img_base64, encoding='utf-8')
+    send_mail(message, 1)
     plt.imshow(qr_img)
     plt.axis('off')
     plt.show()
@@ -96,7 +104,7 @@ def query(session):
         if len(courses) > num:
             num = len(courses)
             print("New grade released")
-            send_mail(message)
+            send_mail(message, 0)
         else:
             print('No new grade released')
 
@@ -106,16 +114,20 @@ def _format_addr(s):
     return formataddr((Header(name, 'utf-8').encode(), addr))
 
 
-def send_mail(message):
+def send_mail(message, mode):
     from_addr = from_addr_mail
     password = password_mail
     to_addr = to_addr_mail
     smtp_server = 'smtp.sina.com'
-    msg = MIMEText(message, 'plain', 'utf-8')
+    if mode == 0:
+        msg = MIMEText(message, 'plain', 'utf-8')
+        msg['Subject'] = Header('New grade released', 'utf-8').encode()
+    else:
+        msg = MIMEText(message, 'html', 'utf-8')
+        msg['Subject'] = Header('Please Login', 'utf-8').encode()
     msg['From'] = _format_addr('GradeScript <%s>' % from_addr)
     msg['To'] = _format_addr('Ens <%s>' % to_addr)
-    msg['Subject'] = Header('New grade released', 'utf-8').encode()
-    server = smtplib.SMTP(smtp_server, 25)
+    server = smtplib.SMTP_SSL(smtp_server, 465)
     server.login(from_addr, password)
     server.sendmail(from_addr, [to_addr], msg.as_string())
     server.quit()
