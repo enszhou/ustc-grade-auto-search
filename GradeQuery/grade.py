@@ -12,6 +12,7 @@ import json
 import traceback
 import base64
 from io import BytesIO
+import sys
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.1.6) Gecko/20091201 Firefox/3.5.6'
@@ -85,6 +86,7 @@ def query(session):
     times = 0
     while True:
         print("\n...Waiting for 600 seconds...")
+        sys.stdout.flush()
         if times > 0:
             time.sleep(600)
         times += 1
